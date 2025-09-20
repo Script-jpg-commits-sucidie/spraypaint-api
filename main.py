@@ -1,40 +1,41 @@
 from flask import Flask, request, jsonify
 from PIL import Image
+import io
 import requests
-from io import BytesIO
+import os
 
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "✅ SprayPaint API is running on Railway!"
+@app.route("/convert", methods=["POST"])
+def convert_image():
+    data = request.json
+    url = data.get("url")
+    max_size = data.get("max_size", 200)
 
-@app.route("/convert", methods=["GET"])
-def convert():
-    url = request.args.get("url")
     if not url:
-        return jsonify({"error": "No image url provided"}), 400
+        return jsonify({"error": "No URL provided"}), 400
 
     try:
         resp = requests.get(url)
-        resp.raise_for_status()
-        img = Image.open(BytesIO(resp.content)).convert("RGB")
-        img = img.resize((64, 64))  # smaller = faster
+        img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
 
-        points = []
-        for y in range(img.height):
-            for x in range(img.width):
-                r, g, b = img.getpixel((x, y))
-                if (r, g, b) != (255, 255, 255):  # skip white pixels
-                    points.append({
-                        "x": x,
-                        "y": y,
-                        "color": [r/255, g/255, b/255]
-                    })
+        if max_size:
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
 
-        return jsonify({"points": points})
+        width, height = img.size
+        pixels = []
+
+        for y in range(height):
+            row = []
+            for x in range(width):
+                r, g, b, a = img.getpixel((x, y))
+                row.append([r, g, b, a])
+            pixels.append(row)
+
+        return jsonify({"width": width, "height": height, "pixels": pixels})
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+port = int(os.environ.get("PORT", 5000))
+app.run(host="0.0.0.0", port=port)
